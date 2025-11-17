@@ -1,6 +1,6 @@
 # OpenRewrite Cookbook
 
-[![JitPack](https://jitpack.io/v/anacoders/openrewrite-cookbook.svg)](https://jitpack.io/#anacoders/openrewrite-cookbook)
+[![JitPack](https://jitpack.io/v/rhart/openrewrite-cookbook.svg)](https://jitpack.io/#rhart/openrewrite-cookbook)
 
 Custom OpenRewrite recipes by Anacoders.
 
@@ -62,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    rewrite("com.github.anacoders:openrewrite-cookbook:v0.1.0")
+    rewrite("com.github.rhart:openrewrite-cookbook:v0.1.0")
 }
 ```
 
@@ -123,7 +123,7 @@ This project uses JitPack for distribution - no manual publishing needed!
    - Publish the release
 
 3. **JitPack builds automatically!**
-   - Visit https://jitpack.io/#anacoders/openrewrite-cookbook
+   - Visit https://jitpack.io/#rhart/openrewrite-cookbook
    - Your release will be available within a few minutes
    - Users can then add it as a dependency
 
@@ -131,7 +131,7 @@ This project uses JitPack for distribution - no manual publishing needed!
 
 Users can also consume the latest commit from `main`:
 ```kotlin
-rewrite("com.github.anacoders:openrewrite-cookbook:main-SNAPSHOT")
+rewrite("com.github.rhart:openrewrite-cookbook:main-SNAPSHOT")
 ```
 
 This is useful for testing unreleased features.
