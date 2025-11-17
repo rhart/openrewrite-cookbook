@@ -19,14 +19,17 @@
 # These are most easily composed through the Yaml recipe builder at:
 # https://app.moderne.io/recipes/builder
 
-# Notice how we can have multiple recipes in the same file, separated by `---`
-# You can also have multiple files in `src/main/resources/META-INF/rewrite`, each containing one or more recipes.
+# Example usage of CreateYamlFilesByPattern recipe
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: com.yourorg.UseOpenRewriteNullable
-displayName: Prefer OpenRewrite Nullable
-description: Replaces JetBrains Nullable with OpenRewrite Nullable.
+name: com.anacoders.cookbook.CreateProjectConfigs
+displayName: Create config.yaml in all project directories
+description: Creates a config.yaml file in each subdirectory under the projects/ folder.
 recipeList:
-  - org.openrewrite.java.ChangeType:
-      oldFullyQualifiedTypeName: org.jetbrains.annotations.Nullable
-      newFullyQualifiedTypeName: org.openrewrite.internal.lang.Nullable
+  - com.anacoders.cookbook.CreateYamlFilesByPattern:
+      filePattern: projects/*/config.yaml
+      fileContents: |
+        apiVersion: v1
+        kind: Config
+        metadata:
+          name: example

@@ -1,156 +1,137 @@
-# Rewrite recipe starter
+# OpenRewrite Cookbook
 
-This repository serves as a template for building your own recipe JARs and publishing them to a repository where they can be applied on [app.moderne.io](https://app.moderne.io) against all the public OSS code that is included there.
+[![JitPack](https://jitpack.io/v/anacoders/openrewrite-cookbook.svg)](https://jitpack.io/#anacoders/openrewrite-cookbook)
 
-We've provided a sample recipe (NoGuavaListsNewArray) and a sample test class. Both of these exist as placeholders, and they should be replaced by whatever recipe you are interested in writing.
+Custom OpenRewrite recipes by Anacoders.
 
-To begin, fork this repository and customize it by:
+## CreateYamlFilesByPattern
 
-1. Changing the root project name in `settings.gradle.kts`.
-2. Changing the `group` in `build.gradle.kts`.
-3. Changing the package structure from `com.yourorg` to whatever you want.
+Creates YAML files in multiple directories matching a wildcard pattern. Files are only created if they don't already exist.
 
-## Getting started
+### Quick Example
 
-Familiarize yourself with the [OpenRewrite documentation](https://docs.openrewrite.org/), in particular the [concepts & explanations](https://docs.openrewrite.org/concepts-explanations) op topics like the [lossless semantic trees](https://docs.openrewrite.org/concepts-and-explanations/lossless-semantic-trees), [recipes](https://docs.openrewrite.org/concepts-and-explanations/recipes), [traits](https://docs.openrewrite.org/concepts-and-explanations/traits) and [visitors](https://docs.openrewrite.org/concepts-and-explanations/visitors).
+Create a `config.yaml` file in every subdirectory under `projects/`:
 
-You might be interested to watch some of the [videos available on OpenRewrite and Moderne](https://www.youtube.com/@moderne-and-openrewrite).
-
-Once you want to dive into the code there is a [comprehensive getting started guide](https://docs.openrewrite.org/authoring-recipes/recipe-development-environment)
-available in the OpenRewrite docs that provides more details than the below README.
-
-## Reference recipes
-
-* [META-INF/rewrite/stringutils.yml](./src/main/resources/META-INF/rewrite/stringutils.yml) - A declarative YAML recipe that replaces usages of `org.springframework.util.StringUtils` with `org.apache.commons.lang3.StringUtils`.
-  * [UseApacheStringUtilsTest](./src/test/java/com/yourorg/UseApacheStringUtilsTest.java) - A test class for the `com.yourorg.UseApacheStringUtils` recipe.
-* [NoGuavaListsNewArrayList.java](./src/main/java/com/yourorg/NoGuavaListsNewArrayList.java) - An imperative Java recipe that replaces usages of `com.google.common.collect.Lists` with `new ArrayList<>()`.
-  * [NoGuavaListsNewArrayListTest.java](./src/test/java/com/yourorg/NoGuavaListsNewArrayListTest.java) - A test class for the `NoGuavaListsNewArrayList` recipe.
-* [SimplifyTernary](./src/main/java/com/yourorg/SimplifyTernary.java) - An Refaster style recipe that simplifies ternary expressions.
-  * [SimplifyTernaryTest](./src/test/java/com/yourorg/SimplifyTernaryTest.java) - A test class for the `SimplifyTernary` recipe.
-* [EqualsAvoidsNull](./src/main/java/com/yourorg/EqualsAvoidsNull.java) - A Refaster recipe that ensures `equals()` method calls avoid null pointer exceptions by calling equals on literals, by using `@Matches` on parameters.
-  * [EqualsAvoidsNullTest](./src/test/java/com/yourorg/EqualsAvoidsNullTest.java) - A test class for the `EqualsAvoidsNull` recipe.
-* [AssertEqualsToAssertThat](./src/main/java/com/yourorg/AssertEqualsToAssertThat.java) - An imperative Java recipe that replaces JUnit's `assertEquals` with AssertJ's `assertThat`, to show how to handle classpath dependencies.
-  * [AssertEqualsToAssertThatTest](./src/test/java/com/yourorg/AssertEqualsToAssertThatTest.java) - A test class for the `AssertEqualsToAssertThat` recipe.
-* [AppendToReleaseNotes](./src/main/java/com/yourorg/AppendToReleaseNotes.java) - A ScanningRecipe that appends a message to the release notes of a project.
-  * [AppendToReleaseNotesTest](./src/test/java/com/yourorg/AppendToReleaseNotesTest.java) - A test class for the `AppendToReleaseNotes` recipe.
-* [FindSpringBeans](./src/main/java/com/yourorg/FindSpringBeans.java) - A recipe that demonstrates how to use Traits to produce a data table on Spring `@Bean`s in a project.
-  * [FindSpringBeansTest](./src/test/java/com/yourorg/FindSpringBeansTest.java) - A test class for the `FindSpringBeans` recipe.
-* [ClassHierarchy](./src/main/java/com/yourorg/ClassHierarchy.java) - A recipe that demonstrates how to produce a data table on the class hierarchy of a project.
-  * [ClassHierarchyTest](./src/test/java/com/yourorg/ClassHierarchyTest.java) - A test class for the `ClassHierarchy` recipe.
-* [UpdateConcoursePipeline](./src/main/java/com/yourorg/UpdateConcoursePipeline.java) - A recipe that demonstrates how to update a Concourse pipeline, as an example of operating on Yaml files.
-  * [UpdateConcoursePipelineTest](./src/test/java/com/yourorg/UpdateConcoursePipelineTest.java) - A test class for the `UpdateConcoursePipeline` recipe.
-
-## Local Publishing for Testing
-
-Before you publish your recipe module to an artifact repository, you may want to try it out locally.
-To do this on the command line, using `gradle`, run:
-
-```bash
-./gradlew publishToMavenLocal
-# or ./gradlew pTML
-# or mvn install
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.CreateProjectConfigs
+displayName: Create config files in all projects
+recipeList:
+  - com.anacoders.cookbook.CreateYamlFilesByPattern:
+      filePattern: projects/*/config.yaml
+      fileContents: |
+        apiVersion: v1
+        kind: Config
+        metadata:
+          name: example
 ```
 
-To publish using maven, run:
+### Pattern Examples
 
-```bash
-./mvnw install
-```
+| Pattern | Description | Creates Files In |
+|---------|-------------|------------------|
+| `projects/*/config.yaml` | Single wildcard `*` | Each direct subdirectory of `projects/` |
+| `apps/*/deployment.yaml` | Works at any depth | Each subdirectory under `apps/` |
+| `src/main/*/application.yaml` | Nested paths | Each subdirectory under `src/main/` |
+| `apps/*/config/*/settings.yaml` | Multiple wildcards | Matching nested paths |
 
-This will publish to your local maven repository, typically under `~/.m2/repository`.
+**Note:** `**` for recursive matching is mentioned in the recipe description but not fully implemented yet.
 
-Replace the groupId, artifactId, recipe name, and version in the below snippets with the ones that correspond to your recipe.
+### Behavior
 
-In the pom.xml of a different project you wish to test your recipe out in, make your recipe module a plugin dependency of rewrite-maven-plugin:
+- ✅ Creates files only in directories that match the pattern
+- ✅ Skips creation if the file already exists (never overwrites)
+- ✅ Works with any directory depth and nesting
+- ✅ Supports multiple `*` wildcards in a single pattern
 
-```xml
-<project>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.openrewrite.maven</groupId>
-                <artifactId>rewrite-maven-plugin</artifactId>
-                <version>RELEASE</version>
-                <configuration>
-                    <activeRecipes>
-                        <recipe>com.yourorg.NoGuavaListsNewArrayList</recipe>
-                    </activeRecipes>
-                </configuration>
-                <dependencies>
-                    <dependency>
-                        <groupId>com.yourorg</groupId>
-                        <artifactId>rewrite-recipe-starter</artifactId>
-                        <version>0.1.0-SNAPSHOT</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-```
+## Using This Recipe
 
-Unlike Maven, Gradle must be explicitly configured to resolve dependencies from Maven local.
-The root project of your Gradle build, make your recipe module a dependency of the `rewrite` configuration:
+### In a Gradle Project
 
-```groovy
+Add to your `build.gradle.kts` or `build.gradle`:
+
+```kotlin
 plugins {
-    id("java")
     id("org.openrewrite.rewrite") version("latest.release")
 }
 
 repositories {
-    mavenLocal()
     mavenCentral()
+    maven { url = uri("https://jitpack.io") }
 }
 
 dependencies {
-    rewrite("com.yourorg:rewrite-recipe-starter:latest.integration")
-}
-
-rewrite {
-    activeRecipe("com.yourorg.NoGuavaListsNewArrayList")
+    rewrite("com.github.anacoders:openrewrite-cookbook:v0.1.0")
 }
 ```
 
-Now you can run `mvn rewrite:run` or `gradlew rewriteRun` to run your recipe.
-
-## Publishing to Artifact Repositories
-
-This project is configured to publish to Moderne's open artifact repository (via the `publishing` task at the bottom of
-the `build.gradle.kts` file). If you want to publish elsewhere, you'll want to update that task.
-[app.moderne.io](https://app.moderne.io) can draw recipes from the provided repository, as well as from [Maven Central](https://search.maven.org).
-
-Note:
-Running the publish task _will not_ update [app.moderne.io](https://app.moderne.io), as only Moderne employees can
-add new recipes. If you want to add your recipe to [app.moderne.io](https://app.moderne.io), please ask the
-team in [Slack](https://join.slack.com/t/rewriteoss/shared_invite/zt-nj42n3ea-b~62rIHzb3Vo0E1APKCXEA) or in [Discord](https://discord.gg/xk3ZKrhWAb).
-
-These other docs might also be useful for you depending on where you want to publish the recipe:
-
-* Sonatype's instructions for [publishing to Maven Central](https://maven.apache.org/repository/guide-central-repository-upload.html)
-* Gradle's instructions on the [Gradle Publishing Plugin](https://docs.gradle.org/current/userguide/publishing\_maven.html).
-
-### From Github Actions
-
-The `.github` directory contains a Github action that will push a snapshot on every successful build.
-
-Run the release action to publish a release version of a recipe.
-
-### From the command line
-
-To build a snapshot, run `./gradlew snapshot publish` to build a snapshot and publish it to Moderne's open artifact repository for inclusion at [app.moderne.io](https://app.moderne.io).
-
-To build a release, run `./gradlew final publish` to tag a release and publish it to Moderne's open artifact repository for inclusion at [app.moderne.io](https://app.moderne.io).
-
-## Applying OpenRewrite recipe development best practices
-
-We maintain a collection of [best practices for writing OpenRewrite recipes](https://docs.openrewrite.org/recipes/java/recipes).
-You can apply these recommendations to your recipes by running the following command:
-
+Then run:
 ```bash
-./gradlew --init-script init.gradle rewriteRun -Drewrite.activeRecipe=org.openrewrite.recipes.rewrite.OpenRewriteRecipeBestPractices
+./gradlew rewriteRun
 ```
-or
+
+### Direct Usage
+
+You can also use the recipe directly in code:
+
+```java
+var recipe = new CreateYamlFilesByPattern(
+    "projects/*/config.yaml",
+    "apiVersion: v1\nkind: Config"
+);
+```
+
+## Development
+
+Build and test:
 ```bash
-./mvnw -U org.openrewrite.maven:rewrite-maven-plugin:run -Drewrite.recipeArtifactCoordinates=org.openrewrite.recipe:rewrite-rewrite:RELEASE -Drewrite.activeRecipes=org.openrewrite.recipes.rewrite.OpenRewriteRecipeBestPractices
+./gradlew build test
 ```
+
+Test locally in another project:
+```bash
+./gradlew publishToMavenLocal
+```
+
+Then in your test project, use `mavenLocal()` in repositories and reference:
+```kotlin
+rewrite("com.anacoders:openrewrite-cookbook:latest.integration")
+```
+
+## License
+
+Apache License 2.0
+
+## Publishing a Release
+
+This project uses JitPack for distribution - no manual publishing needed!
+
+### Create a Release
+
+1. **Tag a version:**
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+2. **Create a GitHub Release** (optional but recommended):
+   - Go to your GitHub repository
+   - Click "Releases" → "Create a new release"
+   - Select your tag (e.g., `v0.1.0`)
+   - Add release notes describing changes
+   - Publish the release
+
+3. **JitPack builds automatically!**
+   - Visit https://jitpack.io/#anacoders/openrewrite-cookbook
+   - Your release will be available within a few minutes
+   - Users can then add it as a dependency
+
+### Using Snapshots (Development Builds)
+
+Users can also consume the latest commit from `main`:
+```kotlin
+rewrite("com.github.anacoders:openrewrite-cookbook:main-SNAPSHOT")
+```
+
+This is useful for testing unreleased features.
