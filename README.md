@@ -62,7 +62,14 @@ repositories {
 }
 
 dependencies {
+    // Use a specific release version (recommended)
     rewrite("com.github.rhart:openrewrite-cookbook:v0.1.0")
+    
+    // Or use the latest commit from main branch (snapshot)
+    // rewrite("com.github.rhart:openrewrite-cookbook:main-SNAPSHOT")
+    
+    // Or use a specific commit hash
+    // rewrite("com.github.rhart:openrewrite-cookbook:5811e78")
 }
 ```
 
@@ -127,11 +134,14 @@ This project uses JitPack for distribution - no manual publishing needed!
    - Your release will be available within a few minutes
    - Users can then add it as a dependency
 
-### Using Snapshots (Development Builds)
+### Using Latest Commit (Development Builds)
 
-Users can also consume the latest commit from `main`:
-```kotlin
-rewrite("com.github.rhart:openrewrite-cookbook:main-SNAPSHOT")
-```
+For testing unreleased features, users can depend on a specific commit:
 
-This is useful for testing unreleased features.
+1. **Get the commit hash** from GitHub (short form, first 7-10 characters)
+2. **Use it as the version:**
+   ```kotlin
+   rewrite("com.github.rhart:openrewrite-cookbook:abc1234")
+   ```
+
+**Note:** JitPack will build the commit on first request, which may take a few minutes. Check the build status at https://jitpack.io/#rhart/openrewrite-cookbook
