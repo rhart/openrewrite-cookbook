@@ -399,7 +399,7 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "projects/project-*/config.yaml",
                         "content: value"
-                .expectedCyclesThatMakeChanges(2)),
+                )).expectedCyclesThatMakeChanges(2),
                 yaml(
                         """
                         existing: file
