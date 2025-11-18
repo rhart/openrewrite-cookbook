@@ -42,13 +42,14 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
 
     @Override
     public String getDescription() {
-        return "Creates YAML files in directories matching a glob-like pattern. Supports * (single segment) and ** (zero or more segments). " +
+        return "Creates YAML files in directories matching a glob-like pattern. Supports * (single segment or within segment) and ** (zero or more segments). " +
                 "Files are only created if they don't already exist. Example: 'projects/*/config.yaml' creates config.yaml in each direct child of projects/. " +
+                "Example: 'projects/project-*/config.yaml' matches directories like 'project-a', 'project-b'. " +
                 "Example: 'src/**/config/app.yaml' matches any 'config' directory under src at any depth.";
     }
 
     @Option(displayName = "File pattern",
-            description = "Pattern with wildcards for where to create files. Use * for single directory wildcard, ** for recursive. " +
+            description = "Pattern with wildcards for where to create files. Use * for single directory wildcard or within segment (e.g., 'project-*'), ** for recursive. " +
                     "Example: 'projects/*/config.yaml' creates config.yaml in each direct child of projects/",
             example = "projects/*/config.yaml")
     String filePattern;
@@ -174,6 +175,14 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
                 pathIdx++;
                 patternIdx++;
 
+            } else if (pattern.contains("*") || pattern.contains("?")) {
+                // Glob pattern within segment (e.g., "project-*")
+                if (!matchGlobPattern(pathSegs.get(pathIdx), pattern)) {
+                    return false;
+                }
+                pathIdx++;
+                patternIdx++;
+
             } else {
                 // Literal segment must match exactly
                 if (!pattern.equals( pathSegs.get( pathIdx ) )) {
@@ -190,6 +199,32 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
         }
 
         return patternIdx == patternSegs.size() && pathIdx == pathSegs.size();
+    }
+
+    /**
+     * Matches a path segment against a glob pattern that may contain wildcards.
+     * Supports * for matching any sequence of characters within a segment.
+     * Supports ? for matching any single character.
+     * Examples: "project-*" matches "project-a", "project-foo", etc.
+     */
+    private boolean matchGlobPattern(String segment, String pattern) {
+        // Convert glob pattern to regex
+        StringBuilder regex = new StringBuilder("^");
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '*') {
+                regex.append(".*");
+            } else if (c == '?') {
+                regex.append(".");
+            } else if ("[]{}().+^$|\\".indexOf(c) != -1) {
+                // Escape regex special characters
+                regex.append("\\").append(c);
+            } else {
+                regex.append(c);
+            }
+        }
+        regex.append("$");
+        return segment.matches(regex.toString());
     }
 
     private Set<Path> resolveTargetFilePaths(Set<Path> existingDirectories) {
@@ -220,3 +255,4 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
         return targets;
     }
 }
+

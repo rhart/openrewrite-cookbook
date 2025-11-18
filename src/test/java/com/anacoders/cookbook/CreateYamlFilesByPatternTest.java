@@ -14,16 +14,12 @@
  * limitations under the License.
  */
 package com.anacoders.cookbook;
-
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
-
 import static org.openrewrite.yaml.Assertions.yaml;
-
 class CreateYamlFilesByPatternTest implements RewriteTest {
-
     @Override
     public void defaults(RecipeSpec spec) {
         spec.recipe(new CreateYamlFilesByPattern(
@@ -31,7 +27,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 "apiVersion: v1\nkind: Config\nmetadata:\n  name: example"
         ));
     }
-
     @DocumentExample
     @Test
     void createsFilesInMatchingDirectoriesAndLeavesExistingFilesUntouched() {
@@ -92,7 +87,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void doesNothingWhenNoMatchingDirectories() {
         rewriteRun(
@@ -109,7 +103,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void worksWithNestedAndDeeplyNestedDirectories() {
         rewriteRun(
@@ -172,7 +165,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void handlesMultipleWildcardsWithStarAndDoubleStar() {
         rewriteRun(
@@ -232,7 +224,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void skipsPartiallyMatchingDirectories() {
         rewriteRun(
@@ -264,7 +255,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void supportsDoubleStarRecursiveMatching() {
         rewriteRun(
@@ -315,7 +305,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void exactPathAtRoot() {
         rewriteRun(
@@ -332,7 +321,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void multipleDoubleStarsWithZeroSegmentMatching() {
         rewriteRun(
@@ -383,7 +371,6 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 )
         );
     }
-
     @Test
     void filenameWithDots() {
         rewriteRun(
@@ -403,6 +390,47 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                         env: production
                         """,
                         s -> s.path("config/app1/application.prod.yaml")
+                )
+        );
+    }
+    @Test
+    void wildcardWithinDirectoryName() {
+        rewriteRun(
+                spec -> spec.recipe(new CreateYamlFilesByPattern(
+                        "projects/project-*/config.yaml",
+                        "content: value"
+                .expectedCyclesThatMakeChanges(2)),
+                yaml(
+                        """
+                        existing: file
+                        """,
+                        s -> s.path("projects/project-a/existing.yaml")
+                ),
+                yaml(
+                        """
+                        existing: file
+                        """,
+                        s -> s.path("projects/project-b/existing.yaml")
+                ),
+                yaml(
+                        """
+                        existing: file
+                        """,
+                        s -> s.path("projects/other/existing.yaml")
+                ),
+                yaml(
+                        doesNotExist(),
+                        """
+                        content: value
+                        """,
+                        s -> s.path("projects/project-a/config.yaml")
+                ),
+                yaml(
+                        doesNotExist(),
+                        """
+                        content: value
+                        """,
+                        s -> s.path("projects/project-b/config.yaml")
                 )
         );
     }
