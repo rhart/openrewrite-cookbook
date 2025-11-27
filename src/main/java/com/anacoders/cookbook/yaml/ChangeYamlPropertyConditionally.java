@@ -19,14 +19,13 @@ import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.*;
+import org.openrewrite.internal.ListUtils;
+import org.openrewrite.internal.NameCaseConvention;
 import org.openrewrite.internal.StringUtils;
-import org.openrewrite.yaml.JsonPathMatcher;
 import org.openrewrite.yaml.YamlIsoVisitor;
 import org.openrewrite.yaml.tree.Yaml;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Pattern;
 
 @Value
@@ -35,51 +34,58 @@ public class ChangeYamlPropertyConditionally extends Recipe {
 
     @Value
     public static class Condition {
-        @Option(displayName = "JsonPath",
-                description = "JsonPath to the property to check.",
-                example = "$.kind")
-        String jsonPath;
+        @Option(displayName = "Property key",
+                description = "The property key to check (dot notation).",
+                example = "kind")
+        String key;
 
-        @Option(displayName = "Value",
-                description = "The value that the property must equal.",
-                example = "Kustomization")
+        @Option(displayName = "Property value",
+                description = "The value that the property must have.",
+                example = "Deployment")
         String value;
     }
 
-    @Option(displayName = "Conditions",
-            description = "List of conditions that must ALL match (AND logic) for the update to occur.",
-            example = "[{\"jsonPath\": \"$.kind\", \"value\": \"Kustomization\"}]")
-    List<Condition> conditions;
+    @Option(displayName = "Property key",
+            description = "The key to look for. Supports glob patterns.",
+            example = "management.metrics.binders.*.enabled")
+    String propertyKey;
 
-    @Option(displayName = "Target JsonPath",
-            description = "JsonPath to the property to update.",
-            example = "$.spec.replicas")
-    String targetJsonPath;
+    @Option(example = "newValue", displayName = "New value",
+            description = "The new value to be used for key specified by `propertyKey`.")
+    String newValue;
 
-    @Option(displayName = "Old value",
-            description = "Only change the property value if it matches the configured `oldValue`.",
+    @Option(example = "oldValue", displayName = "Old value",
             required = false,
-            example = "oci://[^:]+:[0-9.]+")
+            description = "Only change the property value if it matches the configured `oldValue`.")
     @Nullable
     String oldValue;
 
-    @Option(displayName = "New value",
-            description = "The new value to set. Use `$1`, `$2`, etc. for capture group references when `regex` is enabled.",
-            example = "$1:2025.4.0")
-    String newValue;
-
     @Option(displayName = "Regex",
             description = "Default `false`. If enabled, `oldValue` will be interpreted as a Regular Expression, " +
-                          "and replacement will use `replaceAll` to substitute matched portions. " +
-                          "Capture groups can be referenced in `newValue` using `$1`, `$2`, etc.",
+                          "to replace only all parts that match the regex. Capturing group can be used in `newValue`.",
             required = false)
     @Nullable
     Boolean regex;
 
+    @Option(displayName = "Use relaxed binding",
+            description = "Whether to match the `propertyKey` using relaxed binding " +
+                          "rules. Default is `true`. Set to `false` to use exact matching.",
+            required = false)
+    @Nullable
+    Boolean relaxedBinding;
+
+    @Option(displayName = "Conditions",
+            description = "A list of conditions that must ALL be met (AND logic) for the change to be made. " +
+                          "Each condition specifies a property key and the value it must have.",
+            required = false,
+            example = "[{\"key\": \"kind\", \"value\": \"Deployment\"}]")
+    @Nullable
+    List<Condition> conditions;
+
     @Option(displayName = "File pattern",
             description = "A glob expression representing a file path to search for (relative to the project root). Blank/null matches all.",
             required = false,
-            example = "**/k8s/**/*.yaml")
+            example = ".github/workflows/*.yml")
     @Nullable
     String filePattern;
 
@@ -89,17 +95,13 @@ public class ChangeYamlPropertyConditionally extends Recipe {
     }
 
     @Override
-    public String getDescription() {
-        return "Updates a YAML property value only when all specified conditions in the same document match. " +
-                "Supports multiple conditions (AND logic) and regex-based replacement with capture groups. " +
-                "Useful for updating values in multi-document YAML files where each document " +
-                "should be evaluated independently.";
+    public String getInstanceNameSuffix() {
+        return String.format("`%s` to `%s`", propertyKey, newValue);
     }
 
     @Override
-    public String getInstanceNameSuffix() {
-        return String.format("`%s` to `%s` when %d condition(s) match",
-                targetJsonPath, newValue, conditions != null ? conditions.size() : 0);
+    public String getDescription() {
+        return "Change a YAML property. Expects dot notation for nested YAML mappings, similar to how Spring Boot interprets `application.yml` files.";
     }
 
     @Override
@@ -111,72 +113,43 @@ public class ChangeYamlPropertyConditionally extends Recipe {
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        JsonPathMatcher targetMatcher = new JsonPathMatcher(targetJsonPath);
-
-        // Pre-compile condition matchers - use path string as key since JsonPathMatcher
-        // doesn't implement equals/hashCode properly
-        Map<String, JsonPathMatcher> conditionPathMatchers = new HashMap<>();
-        Map<String, String> conditionExpectedValues = new HashMap<>();
-        if (conditions != null) {
-            for (Condition condition : conditions) {
-                String path = condition.getJsonPath();
-                conditionPathMatchers.put(path, new JsonPathMatcher(path));
-                conditionExpectedValues.put(path, condition.getValue());
-            }
-        }
-
         return Preconditions.check(new FindSourceFiles(filePattern), new YamlIsoVisitor<ExecutionContext>() {
-
             @Override
             public Yaml.Document visitDocument(Yaml.Document document, ExecutionContext ctx) {
-                // Check if this document meets ALL conditions
-                if (!allConditionsMet(document, conditionPathMatchers, conditionExpectedValues, ctx)) {
+                if (conditions != null && !conditions.isEmpty() && !allConditionsMet(document, ctx)) {
                     return document;
                 }
-
-                // All conditions met, update the target property
-                Yaml.Document updated = (Yaml.Document) new YamlIsoVisitor<ExecutionContext>() {
-                    @Override
-                    public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
-                        Yaml.Mapping.Entry e = super.visitMappingEntry(entry, ctx);
-                        if (targetMatcher.matches(getCursor()) && matchesOldValue(e.getValue())) {
-                            Yaml.Block updatedValue = updateValue(e.getValue());
-                            if (updatedValue != null) {
-                                e = e.withValue(updatedValue);
-                            }
-                        }
-                        return e;
-                    }
-                }.visit(document, ctx);
-
-                return updated != null ? updated : document;
+                return super.visitDocument(document, ctx);
             }
 
-            private boolean allConditionsMet(Yaml.Document document,
-                                             Map<String, JsonPathMatcher> pathMatchers,
-                                             Map<String, String> expectedValues,
-                                             ExecutionContext ctx) {
-                if (pathMatchers.isEmpty()) {
-                    return true;
+            @Override
+            public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
+                Yaml.Mapping.Entry e = super.visitMappingEntry(entry, ctx);
+                String prop = getProperty(getCursor());
+                if (matchesPropertyKey(prop) && matchesOldValue(e.getValue())) {
+                    Yaml.Block updatedValue = updateValue(e.getValue());
+                    if (updatedValue != null) {
+                        e = e.withValue(updatedValue);
+                    }
                 }
+                return e;
+            }
 
+            private boolean allConditionsMet(Yaml.Document document, ExecutionContext ctx) {
                 Map<String, Boolean> matchResults = new HashMap<>();
-                for (String path : pathMatchers.keySet()) {
-                    matchResults.put(path, false);
+                for (Condition condition : conditions) {
+                    matchResults.put(condition.getKey(), false);
                 }
 
                 new YamlIsoVisitor<ExecutionContext>() {
                     @Override
                     public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
-                        for (Map.Entry<String, JsonPathMatcher> matcherEntry : pathMatchers.entrySet()) {
-                            String path = matcherEntry.getKey();
-                            JsonPathMatcher matcher = matcherEntry.getValue();
-                            String expectedValue = expectedValues.get(path);
-
-                            if (matcher.matches(getCursor()) && entry.getValue() instanceof Yaml.Scalar) {
+                        String prop = getProperty(getCursor());
+                        for (Condition condition : conditions) {
+                            if (matchesConditionKey(prop, condition.getKey()) && entry.getValue() instanceof Yaml.Scalar) {
                                 String actualValue = ((Yaml.Scalar) entry.getValue()).getValue();
-                                if (expectedValue.equals(actualValue)) {
-                                    matchResults.put(path, true);
+                                if (condition.getValue().equals(actualValue)) {
+                                    matchResults.put(condition.getKey(), true);
                                 }
                             }
                         }
@@ -187,30 +160,75 @@ public class ChangeYamlPropertyConditionally extends Recipe {
                 return !matchResults.containsValue(false);
             }
 
-            private boolean matchesOldValue(Yaml.Block value) {
-                if (!(value instanceof Yaml.Scalar)) {
-                    return false;
-                }
-                Yaml.Scalar scalar = (Yaml.Scalar) value;
-                if (StringUtils.isNullOrEmpty(oldValue)) {
-                    return true;
-                }
-                return Boolean.TRUE.equals(regex) ?
-                        Pattern.compile(oldValue).matcher(scalar.getValue()).find() :
-                        scalar.getValue().equals(oldValue);
-            }
-
-            // Returns null if value should not change
-            private Yaml.@Nullable Block updateValue(Yaml.Block value) {
-                if (!(value instanceof Yaml.Scalar)) {
-                    return null;
-                }
-                Yaml.Scalar scalar = (Yaml.Scalar) value;
-                String updatedValue = Boolean.TRUE.equals(regex) ?
-                        scalar.getValue().replaceAll(oldValue, newValue) :
-                        newValue;
-                return scalar.getValue().equals(updatedValue) ? null : scalar.withValue(updatedValue);
+            private boolean matchesConditionKey(String prop, String conditionKey) {
+                return !Boolean.FALSE.equals(relaxedBinding) ?
+                        NameCaseConvention.matchesGlobRelaxedBinding(prop, conditionKey) :
+                        StringUtils.matchesGlob(prop, conditionKey);
             }
         });
+    }
+
+    // returns null if value should not change
+    private Yaml.@Nullable Block updateValue(Yaml.Block value) {
+        if (value instanceof Yaml.Scalar) {
+            Yaml.Scalar scalar = (Yaml.Scalar) value;
+            Yaml.Scalar newScalar = scalar.withValue(Boolean.TRUE.equals(regex) ?
+                    scalar.getValue().replaceAll(Objects.requireNonNull(oldValue), newValue) :
+                    newValue);
+            return scalar.getValue().equals(newScalar.getValue()) ? null : newScalar;
+        }
+        if (value instanceof Yaml.Sequence) {
+            Yaml.Sequence sequence = (Yaml.Sequence) value;
+            return sequence.withEntries(ListUtils.map(sequence.getEntries(), entry -> {
+                if (matchesOldValue(entry.getBlock())) {
+                    Yaml.Block updatedValue = updateValue(entry.getBlock());
+                    if (updatedValue != null) {
+                        return entry.withBlock(updatedValue);
+                    }
+                }
+                return entry;
+            }));
+        }
+        return null;
+    }
+
+    private boolean matchesPropertyKey(String prop) {
+        return !Boolean.FALSE.equals(relaxedBinding) ?
+                NameCaseConvention.matchesGlobRelaxedBinding(prop, propertyKey) :
+                StringUtils.matchesGlob(prop, propertyKey);
+    }
+
+    private boolean matchesOldValue(Yaml.Block value) {
+        if (value instanceof Yaml.Scalar) {
+            Yaml.Scalar scalar = (Yaml.Scalar) value;
+            return StringUtils.isNullOrEmpty(oldValue) ||
+                   (Boolean.TRUE.equals(regex) ?
+                           Pattern.compile(oldValue).matcher(scalar.getValue()).find() :
+                           scalar.getValue().equals(oldValue));
+        } else if (value instanceof Yaml.Sequence) {
+            for (Yaml.Sequence.Entry entry : ((Yaml.Sequence) value).getEntries()) {
+                if (matchesOldValue(entry.getBlock())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String getProperty(Cursor cursor) {
+        StringBuilder asProperty = new StringBuilder();
+        Iterator<Object> path = cursor.getPath();
+        int i = 0;
+        while (path.hasNext()) {
+            Object next = path.next();
+            if (next instanceof Yaml.Mapping.Entry) {
+                Yaml.Mapping.Entry entry = (Yaml.Mapping.Entry) next;
+                if (i++ > 0) {
+                    asProperty.insert(0, '.');
+                }
+                asProperty.insert(0, entry.getKey().getValue());
+            }
+        }
+        return asProperty.toString();
     }
 }
