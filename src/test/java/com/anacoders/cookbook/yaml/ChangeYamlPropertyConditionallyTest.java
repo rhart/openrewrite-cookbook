@@ -588,4 +588,38 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void updatesWhenConditionMatchesDirectChild() {
+        rewriteRun(
+          spec -> spec.recipe(new ChangeYamlPropertyConditionally(
+            List.of(
+              new ChangeYamlPropertyConditionally.Condition("$.kind", "Deployment"),
+              new ChangeYamlPropertyConditionally.Condition("$.metadata.name", "hello-kubernetes")
+            ),
+            "$.spec.replicas",
+            "(3)",
+            "$10",
+            null
+          )),
+          yaml(
+            """
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              replicas: 3
+            """,
+            """
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              replicas: 30
+            """
+          )
+        );
+    }
 }
