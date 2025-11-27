@@ -85,8 +85,9 @@ recipeList:
         - jsonPath: $.kind
           value: Kustomization
       targetJsonPath: $.spec.ref.tag
-      oldValuePattern: "(oci://[^:]+):([0-9.]+)"
+      oldValue: "(oci://[^:]+):([0-9.]+)"
       newValue: "$1:2025.4.0"
+      regex: true
 ```
 
 This transforms `oci://registry.example.com/app:1.0.0` into `oci://registry.example.com/app:2025.4.0`.
@@ -99,19 +100,20 @@ This transforms `oci://registry.example.com/app:1.0.0` into `oci://registry.exam
 | `conditions[].jsonPath` | JsonPath to the property to check | `$.kind` |
 | `conditions[].value` | The value that the property must equal | `Deployment` |
 | `targetJsonPath` | JsonPath to the property to update | `$.spec.replicas` |
-| `oldValuePattern` | Optional regex pattern with capture groups | `(oci://[^:]+):([0-9.]+)` |
-| `newValue` | The new value (use `$1`, `$2` for capture groups) | `$1:2025.4.0` |
+| `oldValue` | Only change if current value matches (exact match, or regex if `regex: true`) | `(oci://[^:]+):([0-9.]+)` |
+| `newValue` | The new value (use `$1`, `$2` for capture groups when `regex: true`) | `$1:2025.4.0` |
+| `regex` | If `true`, interpret `oldValue` as a regex pattern (default: `false`) | `true` |
 | `filePattern` | Optional glob to filter files | `**/k8s/**/*.yaml` |
 
 #### Behavior
 
 - ✅ Updates target property only when ALL conditions match (AND logic)
 - ✅ Supports multiple conditions per recipe
-- ✅ Regex-based replacement with capture groups (`$1`, `$2`, etc.)
+- ✅ Regex-based replacement with capture groups (`$1`, `$2`, etc.) when `regex: true`
 - ✅ Handles multi-document YAML files (each document evaluated independently)
 - ✅ No change if target value already matches
 - ✅ No change if condition or target property is missing
-- ✅ No change if `oldValuePattern` doesn't match current value
+- ✅ No change if `oldValue` doesn't match current value
 - ✅ Optional file pattern filtering
 
 ## Using These Recipes
@@ -168,18 +170,20 @@ var changeRecipe = new ChangeYamlPropertyConditionally(
         new ChangeYamlPropertyConditionally.Condition("$.metadata.labels.environment", "production")
     ),
     "$.spec.replicas",
-    null,  // no regex pattern
-    "3",
-    null   // no file pattern
+    null,   // oldValue - no value matching
+    "3",    // newValue
+    null,   // regex
+    null    // filePattern
 );
 
 // Regex replacement with capture groups
 var regexRecipe = new ChangeYamlPropertyConditionally(
     List.of(new ChangeYamlPropertyConditionally.Condition("$.kind", "Kustomization")),
     "$.spec.ref.tag",
-    "(oci://[^:]+):([0-9.]+)",  // capture registry URL
-    "$1:2025.4.0",              // preserve URL, update version
-    "**/k8s/**/*.yaml"
+    "(oci://[^:]+):([0-9.]+)",  // oldValue - regex pattern
+    "$1:2025.4.0",              // newValue - preserve URL, update version
+    true,                       // regex - enable regex mode
+    "**/k8s/**/*.yaml"          // filePattern
 );
 ```
 

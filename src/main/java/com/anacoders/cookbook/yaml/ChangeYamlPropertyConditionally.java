@@ -17,9 +17,9 @@ package com.anacoders.cookbook.yaml;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
-import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.*;
+import org.openrewrite.internal.StringUtils;
 import org.openrewrite.yaml.JsonPathMatcher;
 import org.openrewrite.yaml.YamlIsoVisitor;
 import org.openrewrite.yaml.tree.Yaml;
@@ -27,15 +27,8 @@ import org.openrewrite.yaml.tree.Yaml;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Updates a YAML property value only when all specified conditions in the same document match.
- * Handles multi-document YAML files correctly, evaluating each document independently.
- * Supports regex-based replacement with capture groups.
- */
-@NullMarked
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class ChangeYamlPropertyConditionally extends Recipe {
@@ -63,20 +56,28 @@ public class ChangeYamlPropertyConditionally extends Recipe {
             example = "$.spec.replicas")
     String targetJsonPath;
 
-    @Option(displayName = "Old value pattern",
-            description = "Optional regex pattern to match current value. Use capture groups for replacement. If not set, value is replaced unconditionally.",
+    @Option(displayName = "Old value",
+            description = "Only change the property value if it matches the configured `oldValue`.",
             required = false,
-            example = "(oci://[^:]+):[0-9.]+")
+            example = "oci://[^:]+:[0-9.]+")
     @Nullable
-    String oldValuePattern;
+    String oldValue;
 
     @Option(displayName = "New value",
-            description = "The new value to set at targetJsonPath. Use $1, $2 etc for capture groups if oldValuePattern is set.",
+            description = "The new value to set. Use `$1`, `$2`, etc. for capture group references when `regex` is enabled.",
             example = "$1:2025.4.0")
     String newValue;
 
+    @Option(displayName = "Regex",
+            description = "Default `false`. If enabled, `oldValue` will be interpreted as a Regular Expression, " +
+                          "and replacement will use `replaceAll` to substitute matched portions. " +
+                          "Capture groups can be referenced in `newValue` using `$1`, `$2`, etc.",
+            required = false)
+    @Nullable
+    Boolean regex;
+
     @Option(displayName = "File pattern",
-            description = "A glob expression for files to process. Blank/null matches all.",
+            description = "A glob expression representing a file path to search for (relative to the project root). Blank/null matches all.",
             required = false,
             example = "**/k8s/**/*.yaml")
     @Nullable
@@ -102,6 +103,13 @@ public class ChangeYamlPropertyConditionally extends Recipe {
     }
 
     @Override
+    public Validated<Object> validate() {
+        return super.validate().and(
+                Validated.test("oldValue", "is required if `regex` is enabled", oldValue,
+                        value -> !(Boolean.TRUE.equals(regex) && StringUtils.isNullOrEmpty(value))));
+    }
+
+    @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         JsonPathMatcher targetMatcher = new JsonPathMatcher(targetJsonPath);
 
@@ -117,111 +125,92 @@ public class ChangeYamlPropertyConditionally extends Recipe {
             }
         }
 
-        // Pre-compile regex pattern if provided
-        Pattern valuePattern = oldValuePattern != null && !oldValuePattern.isEmpty()
-                ? Pattern.compile(oldValuePattern)
-                : null;
+        return Preconditions.check(new FindSourceFiles(filePattern), new YamlIsoVisitor<ExecutionContext>() {
 
-        return Preconditions.check(new FindSourceFiles(filePattern), new
-                YamlIsoVisitor<ExecutionContext>() {
+            @Override
+            public Yaml.Document visitDocument(Yaml.Document document, ExecutionContext ctx) {
+                // Check if this document meets ALL conditions
+                if (!allConditionsMet(document, conditionPathMatchers, conditionExpectedValues, ctx)) {
+                    return document;
+                }
 
+                // All conditions met, update the target property
+                Yaml.Document updated = (Yaml.Document) new YamlIsoVisitor<ExecutionContext>() {
                     @Override
-                    public Yaml.Document visitDocument(Yaml.Document document, ExecutionContext ctx) {
-                        // Check if this document meets ALL conditions
-                        if (!allConditionsMet(document, conditionPathMatchers, conditionExpectedValues, ctx)) {
-                            return document;
+                    public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
+                        Yaml.Mapping.Entry e = super.visitMappingEntry(entry, ctx);
+                        if (targetMatcher.matches(getCursor()) && matchesOldValue(e.getValue())) {
+                            Yaml.Block updatedValue = updateValue(e.getValue());
+                            if (updatedValue != null) {
+                                e = e.withValue(updatedValue);
+                            }
                         }
+                        return e;
+                    }
+                }.visit(document, ctx);
 
-                        // All conditions met, update the target property
-                        Yaml.Document updated = (Yaml.Document) new YamlIsoVisitor<ExecutionContext>() {
-                            @Override
-                            public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry,
-                                                                        ExecutionContext ctx) {
-                                Yaml.Mapping.Entry e = super.visitMappingEntry(entry, ctx);
-                                if (targetMatcher.matches(getCursor())) {
-                                    if (e.getValue() instanceof Yaml.Scalar) {
-                                        Yaml.Scalar scalar = (Yaml.Scalar) e.getValue();
-                                        String currentValue = scalar.getValue();
-                                        String replacementValue = computeNewValue(currentValue,
-                                                valuePattern);
+                return updated != null ? updated : document;
+            }
 
-                                        if (replacementValue != null &&
-                                                !replacementValue.equals(currentValue)) {
-                                            e = e.withValue(scalar.withValue(replacementValue));
-                                        }
-                                    }
+            private boolean allConditionsMet(Yaml.Document document,
+                                             Map<String, JsonPathMatcher> pathMatchers,
+                                             Map<String, String> expectedValues,
+                                             ExecutionContext ctx) {
+                if (pathMatchers.isEmpty()) {
+                    return true;
+                }
+
+                Map<String, Boolean> matchResults = new HashMap<>();
+                for (String path : pathMatchers.keySet()) {
+                    matchResults.put(path, false);
+                }
+
+                new YamlIsoVisitor<ExecutionContext>() {
+                    @Override
+                    public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
+                        for (Map.Entry<String, JsonPathMatcher> matcherEntry : pathMatchers.entrySet()) {
+                            String path = matcherEntry.getKey();
+                            JsonPathMatcher matcher = matcherEntry.getValue();
+                            String expectedValue = expectedValues.get(path);
+
+                            if (matcher.matches(getCursor()) && entry.getValue() instanceof Yaml.Scalar) {
+                                String actualValue = ((Yaml.Scalar) entry.getValue()).getValue();
+                                if (expectedValue.equals(actualValue)) {
+                                    matchResults.put(path, true);
                                 }
-                                return e;
-                            }
-                        }.visit(document, ctx);
-
-                        return updated != null ? updated : document;
-                    }
-
-                    private boolean allConditionsMet(Yaml.Document document,
-                                                     Map<String, JsonPathMatcher> pathMatchers,
-                                                     Map<String, String> expectedValues,
-                                                     ExecutionContext ctx) {
-                        if (pathMatchers.isEmpty()) {
-                            return true;
-                        }
-
-                        Map<String, Boolean> matchResults = new HashMap<>();
-                        for (String path : pathMatchers.keySet()) {
-                            matchResults.put(path, false);
-                        }
-
-                        new YamlIsoVisitor<ExecutionContext>() {
-                            @Override
-                            public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry,
-                                                                        ExecutionContext ctx) {
-                                for (Map.Entry<String, JsonPathMatcher> matcherEntry :
-                                        pathMatchers.entrySet()) {
-                                    String path = matcherEntry.getKey();
-                                    JsonPathMatcher matcher = matcherEntry.getValue();
-                                    String expectedValue = expectedValues.get(path);
-
-                                    if (matcher.matches(getCursor())) {
-                                        if (entry.getValue() instanceof Yaml.Scalar) {
-                                            String actualValue = ((Yaml.Scalar)
-                                                    entry.getValue()).getValue();
-                                            if (expectedValue.equals(actualValue)) {
-                                                matchResults.put(path, true);
-                                            }
-                                        }
-                                    }
-                                }
-                                return super.visitMappingEntry(entry, ctx);
-                            }
-                        }.visit(document, ctx);
-
-                        // All conditions must be met
-                        return !matchResults.containsValue(false);
-                    }
-
-                    @Nullable
-                    private String computeNewValue(String currentValue, @Nullable Pattern pattern) {
-                        if (pattern == null) {
-                            // No pattern, direct replacement
-                            return newValue;
-                        }
-
-                        Matcher matcher = pattern.matcher(currentValue);
-                        if (!matcher.matches()) {
-                            // Pattern doesn't match, don't change
-                            return null;
-                        }
-
-                        // Replace $1, $2, etc. with capture groups
-                        String result = newValue;
-                        for (int i = 1; i <= matcher.groupCount(); i++) {
-                            String group = matcher.group(i);
-                            if (group != null) {
-                                result = result.replace("$" + i, group);
                             }
                         }
-                        return result;
+                        return super.visitMappingEntry(entry, ctx);
                     }
-                });
+                }.visit(document, ctx);
+
+                return !matchResults.containsValue(false);
+            }
+
+            private boolean matchesOldValue(Yaml.Block value) {
+                if (!(value instanceof Yaml.Scalar)) {
+                    return false;
+                }
+                Yaml.Scalar scalar = (Yaml.Scalar) value;
+                if (StringUtils.isNullOrEmpty(oldValue)) {
+                    return true;
+                }
+                return Boolean.TRUE.equals(regex) ?
+                        Pattern.compile(oldValue).matcher(scalar.getValue()).find() :
+                        scalar.getValue().equals(oldValue);
+            }
+
+            // Returns null if value should not change
+            private Yaml.@Nullable Block updateValue(Yaml.Block value) {
+                if (!(value instanceof Yaml.Scalar)) {
+                    return null;
+                }
+                Yaml.Scalar scalar = (Yaml.Scalar) value;
+                String updatedValue = Boolean.TRUE.equals(regex) ?
+                        scalar.getValue().replaceAll(oldValue, newValue) :
+                        newValue;
+                return scalar.getValue().equals(updatedValue) ? null : scalar.withValue(updatedValue);
+            }
+        });
     }
 }

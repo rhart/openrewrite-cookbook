@@ -36,6 +36,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
           "$.spec.replicas",
           null,
           "3",
+          null,
           null
         ));
     }
@@ -207,6 +208,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.replicas",
             null,
             "3",
+            null,
             "**/k8s/**/*.yaml"
           )),
           // This file matches the pattern - should be updated
@@ -263,6 +265,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.replicas",
             null,
             "5",
+            null,
             null
           )),
           yaml(
@@ -301,6 +304,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.replicas",
             null,
             "5",
+            null,
             null
           )),
           // kind matches but environment doesn't
@@ -330,6 +334,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.replicas",
             null,
             "5",
+            null,
             null
           )),
           yaml(
@@ -355,6 +360,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.replicas",
             null,
             "10",
+            null,
             null
           )),
           yaml(
@@ -384,6 +390,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.ref.tag",
             "(oci://[^:]+):([0-9.]+)",
             "$1:2025.4.0",
+            true,
             null
           )),
           yaml(
@@ -413,6 +420,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.ref.tag",
             "(oci://[^:]+):([0-9.]+)",
             "$1:2025.4.0",
+            true,
             null
           )),
           // Value doesn't match the pattern (no oci:// prefix)
@@ -436,6 +444,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.image",
             "([^/]+)/([^:]+):(.+)",
             "$1/$2:latest",
+            true,
             null
           )),
           yaml(
@@ -463,6 +472,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.image",
             "([^:]+):(.+)",
             "$1:latest",
+            true,
             null
           )),
           // Already has the target value
@@ -488,6 +498,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.ref.tag",
             "(.+):([0-9]+\\.[0-9]+\\.[0-9]+)",
             "$1:2025.4.0",
+            true,
             null
           )),
           yaml(
@@ -526,6 +537,7 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
             "$.spec.ref.tag",
             null,
             "v2.0.0",
+            null,
             null
           )),
           yaml(
@@ -598,8 +610,9 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
               new ChangeYamlPropertyConditionally.Condition("$.metadata.name", "hello-kubernetes")
             ),
             "$.spec.replicas",
-            "(3)",
-            "$10",
+            "3",
+            "30",
+            null,
             null
           )),
           yaml(
@@ -618,6 +631,227 @@ class ChangeYamlPropertyConditionallyTest implements RewriteTest {
               name: hello-kubernetes
             spec:
               replicas: 30
+            """
+          )
+        );
+    }
+
+    @Test
+    void multipleConditionsWithOldValueMatch() {
+        rewriteRun(
+          spec -> spec.recipe(new ChangeYamlPropertyConditionally(
+            List.of(
+              new ChangeYamlPropertyConditionally.Condition("$.kind", "Deployment"),
+              new ChangeYamlPropertyConditionally.Condition("$.metadata.name", "hello-kubernetes")
+            ),
+            "$.spec.selector.matchLabels.foo",
+            "firstPart-1.2-secondPart",
+            "firstPart-5.4-secondPart",
+            null,
+            null
+          )),
+          yaml(
+            """
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              selector:
+                matchLabels:
+                  foo: firstPart-1.2-secondPart
+            """,
+            """
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              selector:
+                matchLabels:
+                  foo: firstPart-5.4-secondPart
+            """
+          )
+        );
+    }
+
+    @Test
+    void loadsRecipeFromYamlDefinition() {
+        rewriteRun(
+          spec -> spec.recipeFromYaml(
+            """
+            ---
+            type: specs.openrewrite.org/v1beta/recipe
+            name: test.SimpleCondition
+            displayName: Test simple condition
+            description: Test recipe with simple condition.
+            recipeList:
+              - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+                  conditions:
+                    - jsonPath: $.kind
+                      value: Deployment
+                  targetJsonPath: $.spec.replicas
+                  newValue: "5"
+            """, "test.SimpleCondition"),
+          yaml(
+            """
+            kind: Deployment
+            spec:
+              replicas: 1
+            """,
+            """
+            kind: Deployment
+            spec:
+              replicas: 5
+            """
+          )
+        );
+    }
+
+    @Test
+    void loadsFromYamlWithMultipleConditions() {
+        rewriteRun(
+          spec -> spec.recipeFromYaml(
+            """
+            ---
+            type: specs.openrewrite.org/v1beta/recipe
+            name: test.MultiCondition
+            displayName: Test multiple conditions
+            description: Test recipe with multiple conditions.
+            recipeList:
+              - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+                  conditions:
+                    - jsonPath: $.kind
+                      value: Deployment
+                    - jsonPath: $.metadata.name
+                      value: my-app
+                  targetJsonPath: $.spec.replicas
+                  newValue: "10"
+            """, "test.MultiCondition"),
+          yaml(
+            """
+            kind: Deployment
+            metadata:
+              name: my-app
+            spec:
+              replicas: 1
+            """,
+            """
+            kind: Deployment
+            metadata:
+              name: my-app
+            spec:
+              replicas: 10
+            """
+          )
+        );
+    }
+
+    @Test
+    void conditionsAndRegexWorkWhenDefinedInYaml() {
+        rewriteRun(
+          spec -> spec.recipeFromYaml(
+            """
+            ---
+            type: specs.openrewrite.org/v1beta/recipe
+            name: test.RegexCondition
+            displayName: Test regex with conditions
+            description: Test recipe with regex replacement.
+            recipeList:
+              - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+                  conditions:
+                    - jsonPath: $.kind
+                      value: Deployment
+                  targetJsonPath: $.spec.path
+                  oldValue: "(.*/)v[0-9]+\\\\.[0-9]+\\\\.[0-9]+(/.*)"
+                  newValue: "$1v2.0.0$2"
+                  regex: true
+            """, "test.RegexCondition"),
+          yaml(
+            """
+            kind: Deployment
+            spec:
+              path: "/apps/myapp/v1.2.3/config/settings.yaml"
+            """,
+            """
+            kind: Deployment
+            spec:
+              path: "/apps/myapp/v2.0.0/config/settings.yaml"
+            """
+          )
+        );
+    }
+
+    @Test
+    void replacesVersionInPath() {
+        rewriteRun(
+          spec -> spec.recipeFromYaml(
+            """
+            ---
+            type: specs.openrewrite.org/v1beta/recipe
+            name: com.example.FixKubernetesManifests
+            displayName: Fix Kubernetes manifest selectors
+            description: Updates Service selectors to match Deployment labels.
+            recipeList:
+              - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+                  conditions:
+                    - jsonPath: $.kind
+                      value: Deployment
+                    - jsonPath: $.metadata.name
+                      value: hello-kubernetes
+                  targetJsonPath: $.spec.selector.matchLabels.foo
+                  oldValue: "(.*-)[0-9]+\\\\.[0-9]+(-.*)"
+                  newValue: "$15.4$2"
+                  regex: true
+            """, "com.example.FixKubernetesManifests"),
+          yaml(
+            """
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: hello-kubernetes
+            spec:
+              type: LoadBalancer
+              ports:
+                - port: 80
+                  targetPort: 8080
+              selector:
+                app: goodbye-kubernetes
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              replicas: 3
+              selector:
+                matchLabels:
+                  app: hello-kubernetes
+                  foo: firstPart-1.2-secondPart
+            """,
+            """
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: hello-kubernetes
+            spec:
+              type: LoadBalancer
+              ports:
+                - port: 80
+                  targetPort: 8080
+              selector:
+                app: goodbye-kubernetes
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-kubernetes
+            spec:
+              replicas: 3
+              selector:
+                matchLabels:
+                  app: hello-kubernetes
+                  foo: firstPart-5.4-secondPart
             """
           )
         );
