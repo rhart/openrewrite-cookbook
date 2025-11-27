@@ -132,7 +132,7 @@ repositories {
 
 dependencies {
     // Use a specific release version (recommended)
-    rewrite("com.github.rhart:openrewrite-cookbook:v0.2.0")
+    rewrite("com.github.rhart:openrewrite-cookbook:v0.3.0")
     
     // Or use the latest commit from main branch (snapshot)
     // rewrite("com.github.rhart:openrewrite-cookbook:main-SNAPSHOT")
