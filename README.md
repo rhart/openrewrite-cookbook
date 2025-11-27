@@ -48,11 +48,11 @@ recipeList:
 
 ### ChangeYamlPropertyConditionally
 
-Updates a YAML property value only when another property in the same document matches a specified condition. Useful for updating values in multi-document YAML files where each document should be evaluated independently.
+Updates a YAML property value only when all specified conditions in the same document match. Supports multiple conditions (AND logic) and regex-based replacement with capture groups. Useful for updating values in multi-document YAML files where each document should be evaluated independently.
 
 #### Quick Example
 
-Update `replicas` to `3` only in deployments where `environment` is `production`:
+Update `replicas` to `3` only in Deployments where `environment` is `production`:
 
 ```yaml
 ---
@@ -61,28 +61,57 @@ name: com.yourorg.ScaleProductionDeployments
 displayName: Scale production deployments
 recipeList:
   - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
-      conditionJsonPath: $.metadata.labels.environment
-      conditionValue: production
+      conditions:
+        - jsonPath: $.kind
+          value: Deployment
+        - jsonPath: $.metadata.labels.environment
+          value: production
       targetJsonPath: $.spec.replicas
       newValue: "3"
 ```
+
+#### Regex Replacement Example
+
+Update the version tag while preserving the registry URL using capture groups:
+
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.UpdateImageVersion
+displayName: Update container image version
+recipeList:
+  - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+      conditions:
+        - jsonPath: $.kind
+          value: Kustomization
+      targetJsonPath: $.spec.ref.tag
+      oldValuePattern: "(oci://[^:]+):([0-9.]+)"
+      newValue: "$1:2025.4.0"
+```
+
+This transforms `oci://registry.example.com/app:1.0.0` into `oci://registry.example.com/app:2025.4.0`.
 
 #### Options
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `conditionJsonPath` | JsonPath to the property that must match | `$.metadata.labels.environment` |
-| `conditionValue` | The value that conditionJsonPath must equal | `production` |
+| `conditions` | List of conditions that must ALL match (AND logic) | See examples above |
+| `conditions[].jsonPath` | JsonPath to the property to check | `$.kind` |
+| `conditions[].value` | The value that the property must equal | `Deployment` |
 | `targetJsonPath` | JsonPath to the property to update | `$.spec.replicas` |
-| `newValue` | The new value to set | `3` |
+| `oldValuePattern` | Optional regex pattern with capture groups | `(oci://[^:]+):([0-9.]+)` |
+| `newValue` | The new value (use `$1`, `$2` for capture groups) | `$1:2025.4.0` |
 | `filePattern` | Optional glob to filter files | `**/k8s/**/*.yaml` |
 
 #### Behavior
 
-- ✅ Updates target property only when condition matches
+- ✅ Updates target property only when ALL conditions match (AND logic)
+- ✅ Supports multiple conditions per recipe
+- ✅ Regex-based replacement with capture groups (`$1`, `$2`, etc.)
 - ✅ Handles multi-document YAML files (each document evaluated independently)
 - ✅ No change if target value already matches
 - ✅ No change if condition or target property is missing
+- ✅ No change if `oldValuePattern` doesn't match current value
 - ✅ Optional file pattern filtering
 
 ## Using These Recipes
@@ -125,18 +154,32 @@ You can also use the recipes directly in code:
 ```java
 import com.anacoders.cookbook.yaml.CreateYamlFilesByPattern;
 import com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally;
+import java.util.List;
 
 var createRecipe = new CreateYamlFilesByPattern(
     "projects/*/config.yaml",
     "apiVersion: v1\nkind: Config"
 );
 
+// Simple replacement with conditions
 var changeRecipe = new ChangeYamlPropertyConditionally(
-    "$.metadata.labels.environment",
-    "production",
+    List.of(
+        new ChangeYamlPropertyConditionally.Condition("$.kind", "Deployment"),
+        new ChangeYamlPropertyConditionally.Condition("$.metadata.labels.environment", "production")
+    ),
     "$.spec.replicas",
+    null,  // no regex pattern
     "3",
-    null
+    null   // no file pattern
+);
+
+// Regex replacement with capture groups
+var regexRecipe = new ChangeYamlPropertyConditionally(
+    List.of(new ChangeYamlPropertyConditionally.Condition("$.kind", "Kustomization")),
+    "$.spec.ref.tag",
+    "(oci://[^:]+):([0-9.]+)",  // capture registry URL
+    "$1:2025.4.0",              // preserve URL, update version
+    "**/k8s/**/*.yaml"
 );
 ```
 
