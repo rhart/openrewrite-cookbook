@@ -4,11 +4,13 @@
 
 Custom OpenRewrite recipes by Anacoders.
 
-## CreateYamlFilesByPattern
+## Recipes
+
+### CreateYamlFilesByPattern
 
 Creates YAML files in multiple directories matching a wildcard pattern. Files are only created if they don't already exist.
 
-### Quick Example
+#### Quick Example
 
 Create a `config.yaml` file in every subdirectory under `projects/`:
 
@@ -18,7 +20,7 @@ type: specs.openrewrite.org/v1beta/recipe
 name: com.yourorg.CreateProjectConfigs
 displayName: Create config files in all projects
 recipeList:
-  - com.anacoders.cookbook.CreateYamlFilesByPattern:
+  - com.anacoders.cookbook.yaml.CreateYamlFilesByPattern:
       filePattern: projects/*/config.yaml
       fileContents: |
         apiVersion: v1
@@ -27,7 +29,7 @@ recipeList:
           name: example
 ```
 
-### Pattern Examples
+#### Pattern Examples
 
 | Pattern | Description | Creates Files In |
 |---------|-------------|------------------|
@@ -35,17 +37,55 @@ recipeList:
 | `apps/*/deployment.yaml` | Works at any depth | Each subdirectory under `apps/` |
 | `src/main/*/application.yaml` | Nested paths | Each subdirectory under `src/main/` |
 | `apps/*/config/*/settings.yaml` | Multiple wildcards | Matching nested paths |
+| `src/**/config.yaml` | Recursive `**` | Any depth under `src/` |
 
-**Note:** `**` for recursive matching is mentioned in the recipe description but not fully implemented yet.
-
-### Behavior
+#### Behavior
 
 - ✅ Creates files only in directories that match the pattern
 - ✅ Skips creation if the file already exists (never overwrites)
 - ✅ Works with any directory depth and nesting
 - ✅ Supports multiple `*` wildcards in a single pattern
 
-## Using This Recipe
+### ChangeYamlPropertyConditionally
+
+Updates a YAML property value only when another property in the same document matches a specified condition. Useful for updating values in multi-document YAML files where each document should be evaluated independently.
+
+#### Quick Example
+
+Update `replicas` to `3` only in deployments where `environment` is `production`:
+
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.ScaleProductionDeployments
+displayName: Scale production deployments
+recipeList:
+  - com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally:
+      conditionJsonPath: $.metadata.labels.environment
+      conditionValue: production
+      targetJsonPath: $.spec.replicas
+      newValue: "3"
+```
+
+#### Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `conditionJsonPath` | JsonPath to the property that must match | `$.metadata.labels.environment` |
+| `conditionValue` | The value that conditionJsonPath must equal | `production` |
+| `targetJsonPath` | JsonPath to the property to update | `$.spec.replicas` |
+| `newValue` | The new value to set | `3` |
+| `filePattern` | Optional glob to filter files | `**/k8s/**/*.yaml` |
+
+#### Behavior
+
+- ✅ Updates target property only when condition matches
+- ✅ Handles multi-document YAML files (each document evaluated independently)
+- ✅ No change if target value already matches
+- ✅ No change if condition or target property is missing
+- ✅ Optional file pattern filtering
+
+## Using These Recipes
 
 ### In a Gradle Project
 
@@ -80,12 +120,23 @@ Then run:
 
 ### Direct Usage
 
-You can also use the recipe directly in code:
+You can also use the recipes directly in code:
 
 ```java
-var recipe = new CreateYamlFilesByPattern(
+import com.anacoders.cookbook.yaml.CreateYamlFilesByPattern;
+import com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally;
+
+var createRecipe = new CreateYamlFilesByPattern(
     "projects/*/config.yaml",
     "apiVersion: v1\nkind: Config"
+);
+
+var changeRecipe = new ChangeYamlPropertyConditionally(
+    "$.metadata.labels.environment",
+    "production",
+    "$.spec.replicas",
+    "3",
+    null
 );
 ```
 

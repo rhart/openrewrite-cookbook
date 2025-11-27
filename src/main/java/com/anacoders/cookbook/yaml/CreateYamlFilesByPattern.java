@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.anacoders.cookbook;
+package com.anacoders.cookbook.yaml;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
