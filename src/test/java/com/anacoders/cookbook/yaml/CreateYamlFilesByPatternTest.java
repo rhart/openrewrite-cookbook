@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 package com.anacoders.cookbook.yaml;
+
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+
 import static org.openrewrite.yaml.Assertions.yaml;
+
 class CreateYamlFilesByPatternTest implements RewriteTest {
     @Override
     public void defaults(RecipeSpec spec) {

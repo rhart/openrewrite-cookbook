@@ -255,4 +255,3 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
         return targets;
     }
 }
-

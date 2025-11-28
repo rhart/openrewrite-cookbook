@@ -118,6 +118,90 @@ This transforms `/apps/myapp/v1.2.3/config/settings.yaml` into `/apps/myapp/v2.0
 - ✅ Optional file pattern filtering
 - ✅ Supports relaxed binding (kebab-case, camelCase matching)
 
+### ChangeHclAttributeConditionally
+
+Change an HCL attribute value based on comment-based conditions. Useful for updating Terraform configurations conditionally.
+
+#### Conditional Example
+
+Update `version` only in modules marked with a `# release-channel: stable` comment:
+
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.UpdateStableModules
+displayName: Update stable module versions
+recipeList:
+  - com.anacoders.cookbook.hcl.ChangeHclAttributeConditionally:
+      attributeName: version
+      newValue: "2.0.0"
+      commentConditions:
+        - pattern: "# release-channel:"
+          value: stable
+```
+
+This transforms:
+```hcl
+module "app" {
+  # release-channel: stable
+  source = "registry.example.com/modules/app"
+  version = "1.0.0"
+}
+```
+
+Into:
+```hcl
+module "app" {
+  # release-channel: stable
+  source = "registry.example.com/modules/app"
+  version = "2.0.0"
+}
+```
+
+#### Regex Replacement Example
+
+Update the minor version while preserving the patch version:
+
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.BumpMinorVersion
+displayName: Bump minor version
+recipeList:
+  - com.anacoders.cookbook.hcl.ChangeHclAttributeConditionally:
+      attributeName: version
+      oldValue: "1\\.0\\.(\\d+)"
+      newValue: "2.0.$1"
+      regex: true
+      commentConditions:
+        - pattern: "# release-channel:"
+          value: stable
+```
+
+#### Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `attributeName` | The HCL attribute name to update | `version` |
+| `newValue` | The new value to set | `2.0.0` |
+| `oldValue` | Only change if current value matches (exact match, or regex if `regex: true`) | `1.0.0` |
+| `regex` | If `true`, interpret `oldValue` as a regex pattern (default: `false`) | `true` |
+| `commentConditions` | List of comment conditions that must ALL match (AND logic) | See examples |
+| `commentConditions[].pattern` | Comment text pattern to match (include `#` prefix) | `# release-channel:` |
+| `commentConditions[].value` | Value that must appear after the pattern | `stable` |
+| `filePattern` | Optional glob to filter files | `**/*.tf` |
+
+#### Behavior
+
+- ✅ Updates HCL attribute values in Terraform files
+- ✅ Comment-based conditions check comments within the containing block
+- ✅ Multiple conditions with AND logic (all must match)
+- ✅ Regex-based replacement with capture groups (`$1`, `$2`, etc.) when `regex: true`
+- ✅ No change if target value already matches
+- ✅ No change if `oldValue` doesn't match current value
+- ✅ Optional file pattern filtering
+- ✅ Preserves quoting style (quoted strings stay quoted)
+
 ## Using These Recipes
 
 ### In a Gradle Project
@@ -158,6 +242,7 @@ You can also use the recipes directly in code:
 ```java
 import com.anacoders.cookbook.yaml.CreateYamlFilesByPattern;
 import com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally;
+import com.anacoders.cookbook.hcl.ChangeHclAttributeConditionally;
 import java.util.List;
 
 var createRecipe = new CreateYamlFilesByPattern(
@@ -199,6 +284,21 @@ var regexRecipe = new ChangeYamlPropertyConditionally(
     null,                                     // relaxedBinding
     null,                                     // conditions
     "**/k8s/**/*.yaml"                        // filePattern
+);
+
+// HCL attribute change with comment conditions
+var hclRecipe = new ChangeHclAttributeConditionally(
+    "version",                                // attributeName
+    "2.0.0",                                  // newValue
+    null,                                     // oldValue
+    null,                                     // regex
+    List.of(
+        new ChangeHclAttributeConditionally.CommentCondition(
+            "# release-channel:",
+            "stable"
+        )
+    ),
+    "**/*.tf"                                 // filePattern
 );
 ```
 

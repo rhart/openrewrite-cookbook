@@ -205,7 +205,8 @@ public class ChangeYamlPropertyConditionally extends Recipe {
                    (Boolean.TRUE.equals(regex) ?
                            Pattern.compile(oldValue).matcher(scalar.getValue()).find() :
                            scalar.getValue().equals(oldValue));
-        } else if (value instanceof Yaml.Sequence) {
+        }
+        if (value instanceof Yaml.Sequence) {
             for (Yaml.Sequence.Entry entry : ((Yaml.Sequence) value).getEntries()) {
                 if (matchesOldValue(entry.getBlock())) {
                     return true;

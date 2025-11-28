@@ -13,7 +13,70 @@
 # limitations under the License.
 ---
 type: specs.openrewrite.org/v1beta/example
-recipeName: com.anacoders.cookbook.CreateYamlFilesByPattern
+recipeName: com.anacoders.cookbook.hcl.ChangeHclAttributeConditionally
+examples:
+- description: '`ChangeHclAttributeConditionallyTest#updateAttributeWithMatchingComment`'
+  parameters:
+  - version
+  - 2.0.0
+  - 'null'
+  - 'null'
+  - |-
+    List.of(
+                new ChangeHclAttributeConditionally.CommentCondition(
+                  "# release-channel:",
+                  "stable"
+                )
+              )
+  - 'null'
+  sources:
+  - before: |
+      module "app" {
+        # release-channel: stable
+        source = "registry.example.com/modules/app"
+
+        name = "my-app"
+        version = "1.0.0"
+        enabled = true
+      }
+    after: |
+      module "app" {
+        # release-channel: stable
+        source = "registry.example.com/modules/app"
+
+        name = "my-app"
+        version = "2.0.0"
+        enabled = true
+      }
+    language: hcl
+---
+type: specs.openrewrite.org/v1beta/example
+recipeName: com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally
+examples:
+- description: '`ChangeYamlPropertyConditionallyTest#updatesPropertyValue`'
+  parameters:
+  - spec.replicas
+  - '3'
+  - 'null'
+  - 'null'
+  - 'null'
+  - 'null'
+  - 'null'
+  sources:
+  - before: |
+      apiVersion: apps/v1
+      kind: Deployment
+      spec:
+        replicas: 1
+    after: |
+      apiVersion: apps/v1
+      kind: Deployment
+      spec:
+        replicas: 3
+    language: yaml
+---
+type: specs.openrewrite.org/v1beta/example
+recipeName: com.anacoders.cookbook.yaml.CreateYamlFilesByPattern
 examples:
 - description: '`CreateYamlFilesByPatternTest#createsFilesInMatchingDirectoriesAndLeavesExistingFilesUntouched`'
   parameters:
