@@ -27,7 +27,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
     public void defaults(RecipeSpec spec) {
         spec.recipe(new CreateYamlFilesByPattern(
                 "projects/*/config.yaml",
-                "apiVersion: v1\nkind: Config\nmetadata:\n  name: example"
+                "apiVersion: v1\nkind: Config\nmetadata:\n  name: example",
+                null
         ));
     }
     @DocumentExample
@@ -37,7 +38,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "projects/*/config.yaml",
                         "apiVersion: v1\nkind: Config\nmetadata:\n  name: example"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 // Existing files to establish directory structure
                 yaml(
                         """
@@ -96,7 +98,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "projects/*/config.yaml",
                         "content: value"
-                )).expectedCyclesThatMakeChanges(0),
+                ,
+                        null)).expectedCyclesThatMakeChanges(0),
                 yaml(
                         """
                         # Some other file
@@ -112,7 +115,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "src/**/resources/application.yaml",
                         "server:\n  port: 8080"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 // Shallow nesting
                 yaml(
                         """
@@ -174,7 +178,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "apps/*/config/**/settings.yaml",
                         "enabled: true"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 yaml(
                         """
                         dummy: value
@@ -233,7 +238,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "projects/*/config.yaml",
                         "content: value"
-                )),
+                ,
+                        null)),
                 // This file is in 'projects' but not in a subdirectory
                 yaml(
                         """
@@ -264,7 +270,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "src/**/config.yaml",
                         "k: v"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 // Establish various directory depths
                 yaml(
                         """
@@ -314,7 +321,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "root.yaml",
                         "x: y"
-                )),
+                ,
+                        null)),
                 yaml(
                         doesNotExist(),
                         """
@@ -330,7 +338,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "apps/**/config/**/settings.yaml",
                         "enabled: true"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 yaml(
                         """
                         t: 1
@@ -380,7 +389,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "config/*/application.prod.yaml",
                         "env: production"
-                )),
+                ,
+                        null)),
                 yaml(
                         """
                         existing: file
@@ -402,7 +412,8 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                 spec -> spec.recipe(new CreateYamlFilesByPattern(
                         "projects/project-*/config.yaml",
                         "content: value"
-                )).expectedCyclesThatMakeChanges(2),
+                ,
+                        null)).expectedCyclesThatMakeChanges(2),
                 yaml(
                         """
                         existing: file
@@ -434,6 +445,55 @@ class CreateYamlFilesByPatternTest implements RewriteTest {
                         content: value
                         """,
                         s -> s.path("projects/project-b/config.yaml")
+                )
+        );
+    }
+
+    @Test
+    void overwritesExistingFilesWhenEnabled() {
+        rewriteRun(
+                spec -> spec.recipe(new CreateYamlFilesByPattern(
+                        "projects/*/config.yaml",
+                        "newKey: newValue",
+                        true
+                )),
+                yaml(
+                        """
+                        existing: file
+                        """,
+                        spec -> spec.path("projects/project-a/existing.yaml")
+                ),
+                yaml(
+                        """
+                        oldKey: oldValue
+                        """,
+                        """
+                        newKey: newValue
+                        """,
+                        spec -> spec.path("projects/project-a/config.yaml")
+                )
+        );
+    }
+
+    @Test
+    void doesNotOverwriteExistingFilesByDefault() {
+        rewriteRun(
+                spec -> spec.recipe(new CreateYamlFilesByPattern(
+                        "projects/*/config.yaml",
+                        "newKey: newValue",
+                        null
+                )),
+                yaml(
+                        """
+                        existing: file
+                        """,
+                        spec -> spec.path("projects/project-a/existing.yaml")
+                ),
+                yaml(
+                        """
+                        oldKey: oldValue
+                        """,
+                        spec -> spec.path("projects/project-a/config.yaml")
                 )
         );
     }

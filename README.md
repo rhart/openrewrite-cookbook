@@ -27,6 +27,7 @@ recipeList:
         kind: Config
         metadata:
           name: example
+      overwriteExisting: false  # set to true to replace existing files
 ```
 
 #### Pattern Examples
@@ -39,10 +40,18 @@ recipeList:
 | `apps/*/config/*/settings.yaml` | Multiple wildcards | Matching nested paths |
 | `src/**/config.yaml` | Recursive `**` | Any depth under `src/` |
 
+#### Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `filePattern` | Pattern with wildcards for where to create files | `projects/*/config.yaml` |
+| `fileContents` | The YAML content to write to each created file | `apiVersion: v1` |
+| `overwriteExisting` | If `true`, overwrite existing files with new contents (default: `false`) | `true` |
+
 #### Behavior
 
 - ✅ Creates files only in directories that match the pattern
-- ✅ Skips creation if the file already exists (never overwrites)
+- ✅ Skips creation if the file already exists (use `overwriteExisting: true` to override)
 - ✅ Works with any directory depth and nesting
 - ✅ Supports multiple `*` wildcards in a single pattern
 
@@ -220,7 +229,7 @@ repositories {
 
 dependencies {
     // Use a specific release version (recommended)
-    rewrite("com.github.rhart:openrewrite-cookbook:v0.5.0")
+    rewrite("com.github.rhart:openrewrite-cookbook:v0.6.0")
 
     // Or use the latest commit from main branch (snapshot)
     // rewrite("com.github.rhart:openrewrite-cookbook:main-SNAPSHOT")
@@ -247,7 +256,8 @@ import java.util.List;
 
 var createRecipe = new CreateYamlFilesByPattern(
     "projects/*/config.yaml",
-    "apiVersion: v1\nkind: Config"
+    "apiVersion: v1\nkind: Config",
+    null  // overwriteExisting — set to true to replace existing files
 );
 
 // Simple replacement

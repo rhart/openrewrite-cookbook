@@ -18,12 +18,16 @@ package com.anacoders.cookbook.yaml;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.openrewrite.*;
+import org.openrewrite.yaml.YamlIsoVisitor;
 import org.openrewrite.yaml.YamlParser;
+import org.openrewrite.yaml.tree.Yaml;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.Optional;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptySet;
@@ -43,7 +47,8 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
     @Override
     public String getDescription() {
         return "Creates YAML files in directories matching a glob-like pattern. Supports * (single segment or within segment) and ** (zero or more segments). " +
-                "Files are only created if they don't already exist. Example: 'projects/*/config.yaml' creates config.yaml in each direct child of projects/. " +
+                "By default files are only created if they don't already exist; set overwriteExisting to true to replace existing files. " +
+                "Example: 'projects/*/config.yaml' creates config.yaml in each direct child of projects/. " +
                 "Example: 'projects/project-*/config.yaml' matches directories like 'project-a', 'project-b'. " +
                 "Example: 'src/**/config/app.yaml' matches any 'config' directory under src at any depth.";
     }
@@ -58,6 +63,12 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
             description = "The YAML content to write to each created file.",
             example = "apiVersion: v1\nkind: Config\nmetadata:\n  name: example")
     String fileContents;
+
+    @Option(displayName = "Overwrite existing files",
+            description = "If set to `true`, existing files matching the pattern will be overwritten with the new contents. Default is `false`.",
+            required = false)
+    @Nullable
+    Boolean overwriteExisting;
 
     public static class Accumulator {
         Set<Path> existingDirectories = new HashSet<>();
@@ -114,6 +125,30 @@ public class CreateYamlFilesByPattern extends ScanningRecipe<CreateYamlFilesByPa
             }
         }
         return newFiles;
+    }
+
+    @Override
+    public TreeVisitor<?, ExecutionContext> getVisitor(Accumulator acc) {
+        if (!Boolean.TRUE.equals(overwriteExisting)) {
+            return TreeVisitor.noop();
+        }
+        Set<Path> targetPaths = resolveTargetFilePaths(acc.existingDirectories);
+        return new YamlIsoVisitor<ExecutionContext>() {
+            @Override
+            public Yaml.Documents visitDocuments(Yaml.Documents documents, ExecutionContext ctx) {
+                if (!targetPaths.contains(documents.getSourcePath())) {
+                    return documents;
+                }
+                if (documents.printAll().equals(fileContents)) {
+                    return documents;
+                }
+                Optional<SourceFile> parsed = YamlParser.builder().build().parse(fileContents).findFirst();
+                if (parsed.isPresent() && parsed.get() instanceof Yaml.Documents) {
+                    return documents.withDocuments(((Yaml.Documents) parsed.get()).getDocuments());
+                }
+                return documents;
+            }
+        };
     }
 
     private void validateOptions() {
