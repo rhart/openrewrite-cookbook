@@ -127,6 +127,78 @@ This transforms `/apps/myapp/v1.2.3/config/settings.yaml` into `/apps/myapp/v2.0
 - ✅ Optional file pattern filtering
 - ✅ Supports relaxed binding (kebab-case, camelCase matching)
 
+### CopyEmbeddedYamlValue
+
+Copy a property out of a YAML document that is embedded in a scalar, such as a Flux Kustomization `patch` block scalar, into a property of the enclosing document. Stock YAML recipes treat a block scalar as opaque text; this recipe parses it.
+
+#### Example
+
+Move the ingress host from a leaf patch into a `postBuild.substitute` variable:
+
+```yaml
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.yourorg.ExtractIngressHost
+displayName: Extract ingress host
+recipeList:
+  - com.anacoders.cookbook.yaml.CopyEmbeddedYamlValue:
+      sourceKeyPath: $.spec.patches[*].patch
+      sourceProperty: spec.values.ingress.host
+      propertyKey: spec.postBuild.substitute.ingressHost
+```
+
+This transforms:
+```yaml
+spec:
+  postBuild:
+    substitute:
+      environment: "production"
+  patches:
+    - patch: |
+        spec:
+          values:
+            ingress:
+              host: app.example.com
+      target:
+        kind: HelmRelease
+```
+
+Into:
+```yaml
+spec:
+  postBuild:
+    substitute:
+      environment: "production"
+      ingressHost: "app.example.com"
+  patches:
+    - patch: |
+        spec:
+          values:
+            ingress:
+              host: app.example.com
+      target:
+        kind: HelmRelease
+```
+
+#### Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `sourceKeyPath` | JsonPath matching the scalar(s) holding embedded YAML. A filter on the scalar itself works, e.g. `$.spec.patches[?(@.patch =~ '(?s).*ingress:.*')].patch` | `$.spec.patches[*].patch` |
+| `sourceProperty` | Property to read inside the embedded document (dot notation, exact match) | `spec.values.ingress.host` |
+| `propertyKey` | Property of the enclosing document to write (dot notation) | `spec.postBuild.substitute.ingressHost` |
+| `filePattern` | Optional glob to filter files | `**/*.yaml` |
+
+#### Behavior
+
+- ✅ Uses the first matching scalar whose embedded document holds `sourceProperty` as a scalar
+- ✅ Creates missing parent keys; replaces an existing value
+- ✅ Writes the value as a double-quoted string, so `true` or `3` stay strings (as Flux `substitute` requires)
+- ✅ Evaluated per YAML document (supports multi-document files)
+- ✅ No change when the target already holds the value
+- ✅ No change when no scalar holds the property, or the embedded text is not a YAML mapping
+- ✅ Optional file pattern filtering
+
 ### ChangeHclAttributeConditionally
 
 Change an HCL attribute value based on comment-based conditions. Useful for updating Terraform configurations conditionally.
@@ -251,6 +323,7 @@ You can also use the recipes directly in code:
 ```java
 import com.anacoders.cookbook.yaml.CreateYamlFilesByPattern;
 import com.anacoders.cookbook.yaml.ChangeYamlPropertyConditionally;
+import com.anacoders.cookbook.yaml.CopyEmbeddedYamlValue;
 import com.anacoders.cookbook.hcl.ChangeHclAttributeConditionally;
 import java.util.List;
 
@@ -294,6 +367,14 @@ var regexRecipe = new ChangeYamlPropertyConditionally(
     null,                                     // relaxedBinding
     null,                                     // conditions
     "**/k8s/**/*.yaml"                        // filePattern
+);
+
+// Copy a value out of an embedded YAML document
+var copyRecipe = new CopyEmbeddedYamlValue(
+    "$.spec.patches[*].patch",                  // sourceKeyPath
+    "spec.values.ingress.host",                 // sourceProperty
+    "spec.postBuild.substitute.ingressHost",    // propertyKey
+    "**/*.yaml"                                 // filePattern
 );
 
 // HCL attribute change with comment conditions
