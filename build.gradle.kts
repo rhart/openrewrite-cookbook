@@ -1,15 +1,15 @@
 plugins {
-    id("org.openrewrite.build.recipe-library-base") version "latest.release"
+    id("org.openrewrite.build.recipe-library-base") version "2.23.1"
 
     // This uses the nexus publishing plugin to publish to the moderne-dev repository
     // Remove it if you prefer to publish by other means, such as the maven-publish plugin
-    id("org.openrewrite.build.publish") version "latest.release"
+    id("org.openrewrite.build.publish") version "2.23.1"
     id("nebula.release") version "latest.release"
 
     // Configures artifact repositories used for dependency resolution to include maven central and nexus snapshots.
     // If you are operating in an environment where public repositories are not accessible, we recommend using a
     // virtual repository which mirrors both maven central and nexus snapshots.
-    id("org.openrewrite.build.recipe-repositories") version "latest.release"
+    id("org.openrewrite.build.recipe-repositories") version "2.23.1"
 }
 
 // Set as appropriate for your organization
@@ -23,7 +23,7 @@ recipeDependencies {
 dependencies {
     // The bom version can also be set to a specific version
     // https://github.com/openrewrite/rewrite-recipe-bom/releases
-    implementation(platform("org.openrewrite.recipe:rewrite-recipe-bom:latest.release"))
+    implementation(platform("org.openrewrite.recipe:rewrite-recipe-bom:3.37.0"))
 
     implementation("org.openrewrite:rewrite-java")
     implementation("org.openrewrite.recipe:rewrite-java-dependencies")
