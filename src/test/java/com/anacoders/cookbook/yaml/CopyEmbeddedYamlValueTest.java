@@ -614,4 +614,195 @@ class CopyEmbeddedYamlValueTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void keepsATrailingCommentWhenCreatingTheTarget() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            # trailing comment
+            """,
+            """
+            spec:
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            # trailing comment
+              postBuild:
+                substitute:
+                  ingressHost: "app.example.com"
+            """
+          )
+        );
+    }
+
+    @Test
+    void unescapesASingleQuotedValue() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: 'it''s'
+            """,
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+                  ingressHost: "it's"
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: 'it''s'
+            """
+          )
+        );
+    }
+
+    @Test
+    void copiesADoubleQuotedValueVerbatim() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: "say \\"hi\\"\\tthere"
+            """,
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+                  ingressHost: "say \\"hi\\"\\tthere"
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: "say \\"hi\\"\\tthere"
+            """
+          )
+        );
+    }
+
+    @Test
+    void ignoresABlockScalarValue() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+              patches:
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: |
+                            app.example.com
+                            second line
+            """
+          )
+        );
+    }
+
+    @Test
+    void readsAPatchThatStartsWithADocumentMarker() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+              patches:
+                - patch: |
+                    ---
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            """,
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+                  ingressHost: "app.example.com"
+              patches:
+                - patch: |
+                    ---
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            """
+          )
+        );
+    }
+
+    @Test
+    void skipsAPatchThatIsNotValidYaml() {
+        rewriteRun(
+          yaml(
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+              patches:
+                - patch: |
+                    spec: [unclosed
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            """,
+            """
+            spec:
+              postBuild:
+                substitute:
+                  environment: "production"
+                  ingressHost: "app.example.com"
+              patches:
+                - patch: |
+                    spec: [unclosed
+                - patch: |
+                    spec:
+                      values:
+                        ingress:
+                          host: app.example.com
+            """
+          )
+        );
+    }
 }

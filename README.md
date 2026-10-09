@@ -129,7 +129,7 @@ This transforms `/apps/myapp/v1.2.3/config/settings.yaml` into `/apps/myapp/v2.0
 
 ### CopyEmbeddedYamlValue
 
-Copy a property out of a YAML document that is embedded in a scalar, such as a Flux Kustomization `patch` block scalar, into a property of the enclosing document. Stock YAML recipes treat a block scalar as opaque text; this recipe parses it.
+Copy a property out of a YAML document that is embedded in a scalar, such as a Flux Kustomization `patch` block scalar, into a property of the enclosing document. Stock YAML recipes see the text inside a `patch:` block as one string; this recipe parses that text as YAML and reads a value out of it.
 
 #### Example
 
@@ -184,19 +184,19 @@ spec:
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `sourceKeyPath` | JsonPath matching the scalar(s) holding embedded YAML. A filter on the scalar itself works, e.g. `$.spec.patches[?(@.patch =~ '(?s).*ingress:.*')].patch` | `$.spec.patches[*].patch` |
-| `sourceProperty` | Property to read inside the embedded document (dot notation, exact match) | `spec.values.ingress.host` |
+| `sourceKeyPath` | JsonPath matching the mapping value(s) whose text is a YAML document. A filter on the value's own text works, e.g. `$.spec.patches[?(@.patch =~ '(?s).*ingress:.*')].patch`; filters on sibling keys such as `@.target.kind` are not supported by OpenRewrite's JsonPath matcher | `$.spec.patches[*].patch` |
+| `sourceProperty` | Property to read inside the embedded document (dot notation, exact case-sensitive match; list items are transparent, so `a.b.c` also matches `c` inside items of list `b`; keys containing dots cannot be addressed) | `spec.values.ingress.host` |
 | `propertyKey` | Property of the enclosing document to write (dot notation) | `spec.postBuild.substitute.ingressHost` |
 | `filePattern` | Optional glob to filter files | `**/*.yaml` |
 
 #### Behavior
 
-- ✅ Uses the first matching scalar whose embedded document holds `sourceProperty` as a scalar
-- ✅ Creates missing parent keys; replaces an existing value
+- ✅ Uses the first matching value whose embedded document holds `sourceProperty` as a plain, single-quoted or double-quoted scalar; block scalars are skipped
+- ✅ Creates missing parent keys; replaces an existing scalar value. Leaves the document unchanged if the target or one of its parents is a mapping, list or flow mapping
 - ✅ Writes the value as a double-quoted string, so `true` or `3` stay strings (as Flux `substitute` requires)
 - ✅ Evaluated per YAML document (supports multi-document files)
-- ✅ No change when the target already holds the value
-- ✅ No change when no scalar holds the property, or the embedded text is not a YAML mapping
+- ✅ No change when the target already holds the value as a double-quoted string (a plain or single-quoted equal value is re-quoted)
+- ✅ No change when no value holds the property, or the embedded text is not a YAML mapping; a value that is not valid YAML is skipped silently
 - ✅ Optional file pattern filtering
 
 ### ChangeHclAttributeConditionally

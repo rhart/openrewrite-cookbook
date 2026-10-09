@@ -23,33 +23,37 @@ import org.openrewrite.yaml.JsonPathMatcher;
 import org.openrewrite.yaml.MergeYamlVisitor;
 import org.openrewrite.yaml.YamlIsoVisitor;
 import org.openrewrite.yaml.YamlParser;
+import org.openrewrite.yaml.search.FindProperty;
+import org.openrewrite.yaml.trait.BlockScalar;
 import org.openrewrite.yaml.tree.Yaml;
 
-import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Reads a property from a YAML document that is embedded in a scalar (for example a Kustomize or Flux
- * {@code patch} block scalar) and writes it to a property of the enclosing document.
+ * Reads a property from the YAML text stored inside a string value (for example a Flux Kustomization
+ * {@code patch} block) and writes it to a property of the enclosing document.
  */
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class CopyEmbeddedYamlValue extends Recipe {
 
+    private static final YamlParser PARSER = YamlParser.builder().build();
+
     @Option(displayName = "Source key path",
             description = "A [JsonPath](https://docs.openrewrite.org/reference/jsonpath-and-jsonpathmatcher-reference) expression " +
-                    "matching the scalar(s) whose value is an embedded YAML document. The first match that contains `sourceProperty` is used.",
+                    "matching the mapping value(s) whose text is a YAML document. The first match that contains `sourceProperty` is used.",
             example = "$.spec.patches[*].patch")
     String sourceKeyPath;
 
     @Option(displayName = "Source property",
-            description = "The property to read inside the embedded YAML document, in dot notation.",
+            description = "The property to read inside the embedded YAML document, in dot notation. " +
+                    "Only plain, single-quoted and double-quoted values are copied.",
             example = "spec.values.ingress.host")
     String sourceProperty;
 
     @Option(displayName = "Property key",
             description = "The property of the enclosing document to write the value to, in dot notation. " +
-                    "Missing keys are created; an existing value is replaced. The value is written as a double-quoted string.",
+                    "Missing keys are created; an existing scalar value is replaced. The value is written as a double-quoted string.",
             example = "spec.postBuild.substitute.ingressHost")
     String propertyKey;
 
@@ -72,8 +76,8 @@ public class CopyEmbeddedYamlValue extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Reads a property from the YAML document embedded in a scalar, such as a Flux Kustomization `patch` block scalar, " +
-                "and writes it to a property of the enclosing document. Does nothing when no matching scalar holds the property.";
+        return "Reads a property from the YAML text stored inside a string value, for example a Flux Kustomization `patch` block, " +
+                "and writes it to a property of the enclosing document. Does nothing when no matching value holds the property.";
     }
 
     @Override
@@ -86,17 +90,16 @@ public class CopyEmbeddedYamlValue extends Recipe {
         return Preconditions.check(new FindSourceFiles(filePattern), new YamlIsoVisitor<ExecutionContext>() {
             @Override
             public Yaml.Document visitDocument(Yaml.Document document, ExecutionContext ctx) {
-                String value = findEmbeddedValue(document, ctx);
-                if (value == null) {
+                String quotedValue = findEmbeddedValue(document, ctx);
+                if (quotedValue == null) {
                     return document;
                 }
-                Yaml.Block incoming = parseBlock(snippet(value), ctx);
+                Yaml.Block incoming = parseBlock(snippet(quotedValue));
                 if (incoming == null) {
                     return document;
                 }
-                Yaml.Block merged = (Yaml.Block) new MergeYamlVisitor<>(document.getBlock(), incoming, false, null, null, null)
-                        .visitNonNull(document.getBlock(), ctx, getCursor());
-                return document.withBlock(merged);
+                return (Yaml.Document) new MergeYamlVisitor<>(document.getBlock(), incoming, false, null, null, null)
+                        .visitNonNull(document, ctx, getCursor().getParentOrThrow());
             }
 
             private @Nullable String findEmbeddedValue(Yaml.Document document, ExecutionContext ctx) {
@@ -106,15 +109,18 @@ public class CopyEmbeddedYamlValue extends Recipe {
                     @Override
                     public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
                         if (found.get() == null && entry.getValue() instanceof Yaml.Scalar && matcher.matches(getCursor())) {
-                            Yaml.Block embedded = parseBlock(((Yaml.Scalar) entry.getValue()).getValue(), ctx);
+                            Yaml.Block embedded = parseBlock(embeddedText((Yaml.Scalar) entry.getValue()));
                             if (embedded != null) {
-                                String value = findProperty(embedded, ctx);
-                                if (value != null) {
-                                    found.set(value);
-                                }
+                                found.set(findProperty(embedded, ctx));
                             }
                         }
                         return super.visitMappingEntry(entry, ctx);
+                    }
+
+                    private String embeddedText(Yaml.Scalar scalar) {
+                        return new BlockScalar.Matcher().get(new Cursor(getCursor(), scalar))
+                                .map(BlockScalar::getBody)
+                                .orElse(scalar.getValue());
                     }
                 }.visit(document, ctx, getCursor().getParentOrThrow());
                 return found.get();
@@ -125,8 +131,9 @@ public class CopyEmbeddedYamlValue extends Recipe {
                 new YamlIsoVisitor<ExecutionContext>() {
                     @Override
                     public Yaml.Mapping.Entry visitMappingEntry(Yaml.Mapping.Entry entry, ExecutionContext ctx) {
-                        if (found.get() == null && entry.getValue() instanceof Yaml.Scalar && sourceProperty.equals(dottedKey(getCursor()))) {
-                            found.set(((Yaml.Scalar) entry.getValue()).getValue());
+                        if (found.get() == null && entry.getValue() instanceof Yaml.Scalar &&
+                                FindProperty.matches(getCursor(), sourceProperty, false)) {
+                            found.set(doubleQuoted((Yaml.Scalar) entry.getValue()));
                         }
                         return super.visitMappingEntry(entry, ctx);
                     }
@@ -136,8 +143,12 @@ public class CopyEmbeddedYamlValue extends Recipe {
         });
     }
 
-    private static Yaml.@Nullable Block parseBlock(String yaml, ExecutionContext ctx) {
-        return YamlParser.builder().build().parse(ctx, yaml)
+    /**
+     * Parses YAML text on its own, so a malformed patch is skipped instead of being reported as a recipe error.
+     */
+    private static Yaml.@Nullable Block parseBlock(String yaml) {
+        return PARSER.parse(new InMemoryExecutionContext(t -> {
+                }), yaml)
                 .filter(Yaml.Documents.class::isInstance)
                 .map(Yaml.Documents.class::cast)
                 .filter(docs -> !docs.getDocuments().isEmpty())
@@ -146,33 +157,35 @@ public class CopyEmbeddedYamlValue extends Recipe {
                 .orElse(null);
     }
 
-    private String snippet(String value) {
+    private static @Nullable String doubleQuoted(Yaml.Scalar scalar) {
+        switch (scalar.getStyle()) {
+            case PLAIN:
+                return '"' + escape(scalar.getValue()) + '"';
+            case SINGLE_QUOTED:
+                return '"' + escape(scalar.getValue().replace("''", "'")) + '"';
+            case DOUBLE_QUOTED:
+                return '"' + scalar.getValue() + '"';
+            default:
+                return null;
+        }
+    }
+
+    private static String escape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String snippet(String quotedValue) {
         String[] segments = propertyKey.split("\\.");
         StringBuilder yaml = new StringBuilder();
         StringBuilder indent = new StringBuilder();
         for (int i = 0; i < segments.length; i++) {
             yaml.append(indent).append(segments[i]).append(':');
             if (i == segments.length - 1) {
-                yaml.append(" \"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+                yaml.append(' ').append(quotedValue);
             }
             yaml.append('\n');
             indent.append("  ");
         }
         return yaml.toString();
-    }
-
-    private static String dottedKey(Cursor cursor) {
-        StringBuilder key = new StringBuilder();
-        Iterator<Object> path = cursor.getPath();
-        while (path.hasNext()) {
-            Object next = path.next();
-            if (next instanceof Yaml.Mapping.Entry) {
-                if (key.length() > 0) {
-                    key.insert(0, '.');
-                }
-                key.insert(0, ((Yaml.Mapping.Entry) next).getKey().getValue());
-            }
-        }
-        return key.toString();
     }
 }
